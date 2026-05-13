@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+if ! sqlite3 --version 1>/dev/null 2>&1; then
+	exit 1
+fi
+
+function setup_user_db() {
+	local db
+	db="${1:-"~/.cmd-log.db"}"
+	sqlite3 "${db}" < "./src/setup.sql"
+	sqlite3 "${db}" <<-EOF
+	INSERT OR IGNORE INTO users (user_name, host_name)
+	VALUES ("${USER}", "${HOSTNAME}");
+	EOF
+}
+
+function log_command() {
+	local db
+	local command
+	local timestamp
+	db="${1:-"~/.cmd-log.db"}"
+	command="${2}"
+	printf -v timestamp "%(%Y-%m-%d %H:%M:%f)T" -1
+	[[ -f "${db}" ]] || setup_user_db "${db}"
+	sqlite3 "${db}" <<-EOF
+	INSERT INTO command_log (user_name, host_name, datetime, command)
+	VALUES ("${USER}", "${HOSTNAME}", "${timestamp}", "${command}")
+	WHERE "${command}" NOT IN (SELECT ignore_commands FROM configuration)
+	EOF
+}
