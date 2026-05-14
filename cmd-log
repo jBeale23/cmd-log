@@ -4,16 +4,17 @@ usage() {
 	cat <<-EOF
 		Logs commands to a sqlite3 database for later study.
 
-		Usage: $(basename "${0}") [-h|v] | ([-d[=]<DATABASE>] ([-l [-n[=]<INTEGER>]]) | ([-a|r] <COMMAND>))
+		Usage: $(basename "${0}") [-h|V] | ([-d[=]<DATABASE>] ([-l|v [-n[=]<INTEGER>]]) | ([-a|r] <COMMAND>))
 
 		Options:
 		  -h, --help                Show this help message and exit.
-		  -v, --version             Show version information and exit.
+		  -V, --version             Show version information and exit.
 		  -d, --database <DATABASE> Use the database located at DATABASE, creating it if necessary. Defaults to '\$HOME/.cmd-log.db' if unspecified.
 		  -a, --add-filter          Add a filter that prevents logging commands that start with <COMMAND>. (Case sensitive)
 		  -r, --remove-filter       Remove an existing filter for <COMMAND>. (Case sensitive)
 		  -l, --list-filters        List existing filters and exit.
 		  -n, --limit <INTEGER>     Set configuration to limit listed filters or log entries to <INTEGER>. Defaults to 10 on database initialization or if an invalid value is encountered.
+		  -v, --view                List the 'n' most recent log entries. 'n' is determined by the '--limit' flag if specified, or by per-user configuration value if unspecified.
 	EOF
 }
 
@@ -31,7 +32,7 @@ function setup_user_db() {
 	local user
 	local host
 	db="${1}"
-  	srcdir=$(CDPATH="" cd -- "$(dirname -- "${0}")" && pwd -P)
+	srcdir=$(CDPATH="" cd -- "$(dirname -- "${0}")" && pwd -P)
 	if [[ ! -d ${srcdir} ]]; then
 		printf "%s: failed to setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
 		return 5
@@ -114,14 +115,15 @@ function remove_filter() {
 	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
-	rows=$(sqlite3 "${db}" <<-EOF 2>/dev/null
-		.parameter set :user "'${user}'"
-		.parameter set :filter "'${filter}'"
-		DELETE FROM configuration WHERE key = :user || '.ignore_command' AND value = :filter;
-		SELECT changes();
+	rows=$(
+		sqlite3 "${db}" <<-EOF 2>/dev/null
+			.parameter set :user "'${user}'"
+			.parameter set :filter "'${filter}'"
+			DELETE FROM configuration WHERE key = :user || '.ignore_command' AND value = :filter;
+			SELECT changes();
 		EOF
 	)
-	if (( rows != 1 )); then
+	if ((rows != 1)); then
 		printf "%s: failed to remove filter '%s'.\n" "$(basename "${0}")" "${filter}" >&2
 		return 4
 	fi
@@ -139,12 +141,13 @@ function list_filters() {
 		setup_user_db "${db}" || return "${?}"
 	fi
 	limit=$(read_list_limit "${db}")
-	rows=$(sqlite3 "${db}" <<-EOF 2>/dev/null
-		.parameter set :user "'${user}'"
-		SELECT COUNT(value) FROM configuration WHERE key = :user || '.ignore_command';
+	rows=$(
+		sqlite3 "${db}" <<-EOF 2>/dev/null
+			.parameter set :user "'${user}'"
+			SELECT COUNT(value) FROM configuration WHERE key = :user || '.ignore_command';
 		EOF
 	)
-	printf "Displaying %s of %s Current Filters\n" "$(( rows > limit ? limit : rows ))" "${rows}"
+	printf "Displaying %s of %s Current Filters\n" "$((rows > limit ? limit : rows))" "${rows}"
 	sqlite3 -column "${db}" 2>/dev/null <<-EOF
 		.parameter set :user "'${user}'"
 		.parameter set :limit "'${limit}'"
@@ -181,10 +184,11 @@ function read_list_limit() {
 	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
-	limit=$(sqlite3 "${db}" <<-EOF
-		.parameter set :user "'${user}'"
-		SELECT value FROM configuration
-		WHERE key = :user || '.number_entries_displayed';
+	limit=$(
+		sqlite3 "${db}" <<-EOF
+			.parameter set :user "'${user}'"
+			SELECT value FROM configuration
+			WHERE key = :user || '.number_entries_displayed';
 		EOF
 	)
 	if [[ ! "${limit}" =~ ^[0-9]+$ ]]; then
@@ -193,6 +197,36 @@ function read_list_limit() {
 		printf "%s: invalid display limit was found. It was reset to the default value of 10 for user: %s\n" "$(basename "${0}")" "${user}" >&2
 	fi
 	printf "%s" "${limit}"
+}
+
+function view_log_entries() {
+	local db
+	local user
+	local limit
+	local rows
+	db="${1}"
+	if [[ ! -f "${db}" ]]; then
+		setup_user_db "${db}" || return "${?}"
+	fi
+	limit=$(read_list_limit "${db}")
+	rows=$(
+		sqlite3 "${db}" <<-EOF 2>/dev/null
+			.parameter set :user "'${user}'"
+			SELECT COUNT(*) FROM command_log;
+		EOF
+	)
+	printf "Displaying %s of %s Logged Commands\n" "$((rows > limit ? limit : rows))" "${rows}"
+	sqlite3 -column "${db}" 2>/dev/null <<-EOF
+		.parameter set :user "'${user}'"
+		.parameter set :limit "'${limit}'"
+		SELECT * FROM (
+			SELECT * 
+			FROM command_log
+			ORDER BY id DESC
+			LIMIT :limit
+		)
+		ORDER BY id ASC;
+	EOF
 }
 
 function main() {
@@ -207,12 +241,13 @@ function main() {
 	local adding_filter
 	local removing_filter
 	local listing_filters
+	local listing_logged_commands
 	while [[ "${#}" -gt 0 ]]; do
 		if printf "%s\n" "${1}" | grep -qE -- "^(-h)|(--h(e(l(p)?)?)?)"; then
 			usage
 			shift 1
 			return 0
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-v)|(--v(e(r(s(i(o(n)?)?)?)?)?)?)"; then
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-V)|(--v(e(r(s(i(o(n)?)?)?)?)?)?)"; then
 			version
 			shift 1
 			return 0
@@ -224,6 +259,9 @@ function main() {
 			shift 1
 		elif printf "%s\n" "${1}" | grep -qE -- "^(-r)|(--r(e(m(o(v(e(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?)?)?)"; then
 			removing_filter=true
+			shift 1
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-v)|(--v(i(e(w)?)?)?)"; then
+			listing_logged_commands=true
 			shift 1
 		elif printf "%s\n" "${1}" | grep -qE -- "^(-d)|(--d(a(t(a(b(a(s(e)?)?)?)?)?)?)?)"; then
 			case "${1}" in
@@ -351,14 +389,21 @@ function main() {
 	adding_filter="${adding_filter:-false}"
 	removing_filter="${removing_filter:-false}"
 	listing_filters="${listing_filters:-false}"
+	listing_logged_commands="${listing_logged_commands:-false}"
 	_old_limit=$(read_list_limit "${db}")
 	limit="${limit:-"${_old_limit}"}"
-	if (( "${limit}" != "${_old_limit}" )); then
+	if (("${limit}" != "${_old_limit}")); then
 		configure_list_limit "${db}" "${limit}"
 	fi
-	if "${listing_filters}"; then
+	if "${listing_filters}" && "${listing_logged_commands}"; then
+		printf "%s: If '--list-filters' is specified '--view' can't be specified.\n" "$(basename "${0}")" >&2
+		return 2
+	elif "${listing_filters}"; then
 		list_filters "${db}"
-		return 0	
+		return 0
+	elif "${listing_logged_commands}"; then
+		view_log_entries "${db}"
+		return 0
 	elif "${adding_filter}" && "${removing_filter}"; then
 		printf "%s: If '--add-filter' is specified '--remove-filter' can't be specified.\n" "$(basename "${0}")" >&2
 		return 2
