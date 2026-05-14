@@ -27,11 +27,17 @@ version() {
 function setup_user_db() {
 	local db
 	db="${1}"
-	sqlite3 "${db}" <"./src/setup.sql"
+  	srcdir=$(CDPATH="" cd -- "$(dirname -- "${0}")" && pwd -P)
+	if ! [[ -d ${srcdir} ]]; then
+		printf "%s: failed to setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
+		return 5
+	fi
+	sqlite3 "${db}" <"${srcdir}/src/setup.sql"
 	sqlite3 "${db}" <<-EOF
 		INSERT OR IGNORE INTO users (user_name, host_name)
 		VALUES ("${USER}", "${HOSTNAME}");
 	EOF
+	printf "%s: setup user database at path '%s'.\n" "$(basename "${0}")" "${db}"
 }
 
 function log_command() {
@@ -43,7 +49,9 @@ function log_command() {
 	printf -v command -- "%s" "${2}"
 	printf -v timestamp "%(%Y-%m-%d %H:%M:%S)T" -1
 	id=$(uuidgen)
-	[[ -f "${db}" ]] || setup_user_db "${db}"
+	if ! [[ -f "${db}" ]]; then
+		setup_user_db "${db}" || return "${?}"
+	fi
 	sqlite3 "${db}" <<-EOF
 		INSERT INTO command_log (id, user_name, host_name, datetime, command)
 		SELECT "${id}", "${USER}", "${HOSTNAME}", "${timestamp}", "${command}"
@@ -56,7 +64,9 @@ function add_filter() {
 	local filter
 	db="${1}"
 	filter="${2}"
-	[[ -f "${db}" ]] || setup_user_db "${db}"
+	if ! [[ -f "${db}" ]]; then
+		setup_user_db "${db}" || return "${?}"
+	fi
 	if ! sqlite3 "${db}" <<-EOF 2>/dev/null; then
 		INSERT INTO configuration (ignore_commands)
 		VALUES ("${filter}");
@@ -72,7 +82,9 @@ function remove_filter() {
 	local filter
 	db="${1}"
 	filter="${2}"
-	[[ -f "${db}" ]] || setup_user_db "${db}"
+	if ! [[ -f "${db}" ]]; then
+		setup_user_db "${db}" || return "${?}"
+	fi
 	rows=$(sqlite3 "${db}" <<-EOF 2>/dev/null
 		DELETE FROM configuration WHERE ignore_commands = "${filter}";
 		SELECT changes();
@@ -88,7 +100,9 @@ function remove_filter() {
 function list_filters() {
 	local db
 	db="${1}"
-	[[ -f "${db}" ]] || setup_user_db "${db}"
+	if ! [[ -f "${db}" ]]; then
+		setup_user_db "${db}" || return "${?}"
+	fi
 	printf "Current Filters\n"
 	sqlite3 -column "${db}" "SELECT * FROM configuration;"
 }
