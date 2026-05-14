@@ -4,18 +4,19 @@ usage() {
 	cat <<-EOF
 		Logs commands to a sqlite3 database for later study.
 
-		Usage: $(basename "${0}") [-h|V] | ([-d[=]<DATABASE>] ([-l|v [-n[=]<INTEGER>] [-u[=]<USER>]]) | ([-a|r] <COMMAND>))
+		Usage: $(basename "${0}") [-h|V] | ([-d[=]<DATABASE>] ([(-l|v [-n[=]<INTEGER>]) | ([-e[=][PATH]]) [-u[=]<USER>]]) | ([-a|r] <COMMAND>))
 
 		Options:
 		  -h, --help                Show this help message and exit.
 		  -V, --version             Show version information and exit.
-		  -d, --database <DATABASE> Use the database located at DATABASE, creating it if necessary. Defaults to '\$HOME/.cmd-log.db' if unspecified.
+		  -d, --database <DATABASE> Use the database located at <DATABASE>, creating it if necessary. Defaults to '\$HOME/.cmd-log.db' if unspecified.
+		  -e, --export [PATH]       Export logged commands from the database to the specified [PATH] as a csv. Defaults to './cmd-log.csv' if unspecified. Does not replace existing files.
 		  -a, --add-filter          Add a filter that prevents logging commands that start with <COMMAND>. (Case sensitive)
 		  -r, --remove-filter       Remove an existing filter for <COMMAND>. (Case sensitive)
 		  -l, --list-filters        List existing filters and exit.
 		  -n, --limit <INTEGER>     Set configuration to limit listed filters or log entries to <INTEGER>. Defaults to 10 on database initialization or if an invalid value is encountered.
 		  -v, --view                List the 'n' most recent log entries. 'n' is determined by the '--limit' flag if specified, or by per-user configuration value if unspecified.
-		  -u, --user <USER>         List filters or logged commands for specified <USER> instead of '\$USER'.
+		  -u, --user <USER>         List filters or logged commands, or export logged commands for specified <USER> instead of '\$USER'.
 		      --                    Stop processing command line arguments.
 	EOF
 }
@@ -233,6 +234,48 @@ function view_log_entries() {
 	EOF
 }
 
+function export_to_csv() {
+	local db
+	local export_path
+	local user
+	db="${1}"
+	export_path="${2}"
+	user="${3}"
+	if [[ ! -f "${db}" ]]; then
+		setup_user_db "${db}" || return "${?}"
+	fi
+	if [[ -e ${export_path} ]]; then
+		printf "%s: file exists at path '%s'.\n" "$(basename "${0}")" "${export_path}" >&2
+		return 6
+	fi
+	if [[ -z "${user}" ]]; then
+		if (( "$(id -u)" != 0 )); then
+			printf "%s: exporting command log for all users requires root priveleges.\n" "$(basename "${0}")" >&2
+			return 7
+		fi
+		sqlite3 "${db}" <<-EOF >"${export_path}"
+			.header on
+			.mode csv
+			SELECT * FROM command_log;
+		EOF
+		chown "${SUDO_USER}":"${SUDO_USER}" "${export_path}"
+		printf "%s: exported logged commands for all users to path '%s'.\n" "$(basename "${0}")" "${export_path}" >&2
+		return 0
+	fi
+	if [[ "${user}" != "$(id -un)" ]] && (( "$(id -u)" != 0 )); then
+		printf "%s: exporting command log for other users requires root priveleges.\n" "$(basename "${0}")" >&2
+		return 7
+	fi
+	sqlite3 "${db}" <<-EOF >"${export_path}" 2>/dev/null
+		.parameter set :user "'${user}'"
+		.header on
+		.mode csv
+		SELECT * FROM command_log
+		WHERE user_name = :user;
+	EOF
+	printf "%s: exported logged commands for user: '%s' to path '%s'.\n" "$(basename "${0}")" "${user}" "${export_path}" >&2
+}
+
 function main() {
 	if ! sqlite3 --version &>/dev/null; then
 		printf "%s: sqlite3 is required. Please install it and try again.\n" "$(basename "${0}")" >&2
@@ -247,6 +290,8 @@ function main() {
 	local listing_filters
 	local listing_logged_commands
 	local view_user
+	local export_mode
+	local export_path
 	while [[ "${#}" -gt 0 ]]; do
 		if [[ "${1}" =~ ^(-h)|(--h(e(l(p)?)?)?) ]]; then
 			usage
@@ -409,13 +454,58 @@ function main() {
 						return 2
 						;;
 					*)
-						limit="${2}"
+						view_user="${2}"
 						shift 1
 						;;
 					esac
 				else
 					printf "%s: If '--user' is specified, a user must be provided.\n" "$(basename "${0}")" >&2
 					return 2
+				fi
+			fi
+			shift 1
+		elif [[ "${1}" =~ ^(-e)|(--e(x(p(o(r(t)?)?)?)?)?) ]]; then
+			export_mode=true
+			case "${1}" in
+			*=*)
+				leader="${1%%=*}="
+				export_path="${1#"${leader}"}"
+				;;
+			--export*)
+				export_path="${1#--export}"
+				;;
+			--expor*)
+				export_path="${1#--expor}"
+				;;
+			--expo*)
+				export_path="${1#--expo}"
+				;;
+			--exp*)
+				export_path="${1#--exp}"
+				;;
+			--ex*)
+				export_path="${1#--ex}"
+				;;
+			--e*)
+				export_path="${1#--e}"
+				;;
+			-e*)
+				export_path="${1#-e}"
+				;;
+			*)
+				printf "%s: invalid export format -- '%s\n'" "$(basename "${0}")" "${1}" >&2
+				return 2
+				;;
+			esac
+			if [[ -z "${export_path}" ]]; then
+				if [[ -n "${2}" ]]; then
+					case "${2}" in
+					-*) ;;
+					*)
+						export_path="${2}"
+						shift 1
+						;;
+					esac
 				fi
 			fi
 			shift 1
@@ -439,11 +529,18 @@ function main() {
 	removing_filter="${removing_filter:-false}"
 	listing_filters="${listing_filters:-false}"
 	listing_logged_commands="${listing_logged_commands:-false}"
-	view_user="${view_user:-$(id -un)}"
+	export_mode="${export_mode:-false}"
 	_old_limit=$(read_list_limit "${db}")
 	limit="${limit:-"${_old_limit}"}"
 	if (("${limit}" != "${_old_limit}")); then
 		configure_list_limit "${db}" "${limit}"
+	fi
+	if "${export_mode}"; then
+		export_path="$(realpath "${export_path:-"./cmd-log.csv"}")"
+		export_to_csv "${db}" "${export_path}" "${view_user}"
+		return "${?}"
+	else
+		view_user="${view_user:-$(id -un)}"
 	fi
 	if "${listing_filters}" && "${listing_logged_commands}"; then
 		printf "%s: If '--list-filters' is specified '--view' can't be specified.\n" "$(basename "${0}")" >&2
