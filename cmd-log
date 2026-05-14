@@ -214,7 +214,7 @@ function view_log_entries() {
 	rows=$(
 		sqlite3 "${db}" <<-EOF 2>/dev/null
 			.parameter set :user "'${user}'"
-			SELECT COUNT(*) FROM command_log WHERE user_name = :user;
+			SELECT COUNT(id) FROM command_log WHERE user_name = :user;
 		EOF
 	)
 	printf "Displaying %s of %s Logged Commands\n" "$((rows > limit ? limit : rows))" "${rows}"
