@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
 
-if ! sqlite3 --version &>/dev/null; then
-	exit 1
-fi
-if ! uuidgen --version &>/dev/null; then
-	exit 1
-fi
+usage() {
+	cat <<-EOF
+		Logs commands to a sqlite3 database for later study.
+
+		Usage: $(basename "${0}") [-d[=]DATABASE] [-a|r[=]IGNORE] [-h]|[-v] <COMMAND>
+
+		Options:
+		  -h, --help                   Show this help message and exit.
+		  -v, --version                Show version information and exit.
+		  -d, --database [DATABASE]    Use the database located at DATABASE, creating it if necessary. Defaults to '\$HOME/.cmd-log.db' if unspecified.
+	EOF
+}
+
+version() {
+	cat <<-EOF
+		$(basename "${0}") 0.1.0
+		Copyright © 2026 Josh Beale <jbeale2023@gmail.com>.
+		Licence: The MIT License.
+	EOF
+}
 
 function setup_user_db() {
 	local db
@@ -33,3 +47,48 @@ function log_command() {
 	WHERE "${command}" NOT LIKE (SELECT ignore_commands FROM configuration) || '%';
 	EOF
 }
+
+function main() {
+	if ! sqlite3 --version &>/dev/null; then
+		printf "%s: sqlite3 is required. Please install it and try again.\n" "$(basename "${0}")" >&2
+		return 3
+	fi
+	if ! uuidgen --version &>/dev/null; then
+		printf "%s: uuidgen is required. Please install it and try again.\n" "$(basename "${0}")" >&2
+		return 3
+	fi
+	local db
+	local command
+	while [[ "${#}" -gt 0 ]]; do
+		if printf "%s\n" "${1}" | grep -qE -- "^(-h)|(--h(e(l(p)?)?)?)"; then
+			usage
+			shift 1
+			return 0
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-v)|(--v(e(r(s(i(o(n)?)?)?)?)?))"; then
+			version
+			shift 1
+			return 0
+		elif [[ "${1}" = "--" ]]; then
+			shift 1
+			break
+		elif printf "%s\n" "${1}" | grep -qE -- "^-.*"; then
+			cat <<-EOF >&2
+				$(basename "$0"): invalid option -- '${1}'
+				Try '$(basename "${0}") --help' for more information.
+			EOF
+			return 2
+		else
+			command="${*}"
+			shift 1
+			break
+		fi
+	done
+	db="${db:-"${HOME}/.cmd-log.db"}"
+	if [[ -z "${command}" ]]; then
+		usage
+		return 1
+	fi
+	log_command "${db}" "${command}" || return "${?}"
+}
+
+main "${@}" || exit "${?}"
