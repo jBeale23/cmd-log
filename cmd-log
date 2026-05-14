@@ -256,13 +256,13 @@ function main() {
 			version
 			shift 1
 			return 0
-		elif [[ "${1}" =~ ^(-l)|(--l(i(s(t(-(f(i(l(t(e(r(s)?)?)?)?)?)?)?)?)?)?)?)" ]]; then
+		elif [[ "${1}" =~ ^(-l)|(--l(i(s(t(-(f(i(l(t(e(r(s)?)?)?)?)?)?)?)?)?)?)?) ]]; then
 			listing_filters=true
 			shift 1
 		elif [[ "${1}" =~ ^(-a)|(--a(d(d(-(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?) ]]; then
 			adding_filter=true
 			shift 1
-		elif [[ "${1}" ^(-r)|(--r(e(m(o(v(e(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?)?)?) ]]; then
+		elif [[ "${1}" =~ ^(-r)|(--r(e(m(o(v(e(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?)?)?) ]]; then
 			removing_filter=true
 			shift 1
 		elif [[ "${1}" =~ ^(-v)|(--v(i(e(w)?)?)?) ]]; then
