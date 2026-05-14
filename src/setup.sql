@@ -5,13 +5,13 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS command_log (
+	id TEXT PRIMARY KEY,
 	user_name TEXT NOT NULL,
 	host_name TEXT NOT NULL,
 	datetime TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	command TEXT NOT NULL,
-	PRIMARY KEY (user_name, host_name)
+	command TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS configuration (
-	ignore_commands TEXT NOT NULL,
-)
+	ignore_commands TEXT PRIMARY KEY
+);
