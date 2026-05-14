@@ -50,18 +50,16 @@ function log_command() {
 	db="${1}"
 	printf -v command -- "%s" "${2}"
 	printf -v timestamp "%(%Y-%m-%d %H:%M:%S)T" -1
-	id=$(uuidgen)
 	if ! [[ -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
 	sqlite3 "${db}" <<-EOF
-		.parameter set :id "'${id}'"
 		.parameter set :user "'${USER}'"
 		.parameter set :host "'${HOSTNAME}'"
 		.parameter set :timestamp "'${timestamp}'"
 		.parameter set :command "'${command}'"
 		INSERT INTO command_log (id, user_name, host_name, datetime, command)
-		SELECT :id, :user, :host, :timestamp, :command
+		SELECT "NULL", :user, :host, :timestamp, :command
 		WHERE NOT EXISTS (
 			SELECT 1
 			FROM configuration
@@ -123,10 +121,6 @@ function list_filters() {
 function main() {
 	if ! sqlite3 --version &>/dev/null; then
 		printf "%s: sqlite3 is required. Please install it and try again.\n" "$(basename "${0}")" >&2
-		return 3
-	fi
-	if ! uuidgen --version &>/dev/null; then
-		printf "%s: uuidgen is required. Please install it and try again.\n" "$(basename "${0}")" >&2
 		return 3
 	fi
 	local db
