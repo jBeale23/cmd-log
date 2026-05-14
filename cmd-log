@@ -107,6 +107,7 @@ function remove_filter() {
 	local db
 	local user
 	local filter
+	local rows
 	db="${1}"
 	user=$(id -un)
 	filter="${2}"
@@ -131,13 +132,19 @@ function list_filters() {
 	local db
 	local user
 	local limit
+	local rows
 	db="${1}"
 	user=$(id -un)
 	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
 	limit=$(read_list_limit "${db}")
-	printf "Current Filters\n"
+	rows=$(sqlite3 "${db}" <<-EOF 2>/dev/null
+		.parameter set :user "'${user}'"
+		SELECT COUNT(value) FROM configuration WHERE key = :user || '.ignore_command';
+		EOF
+	)
+	printf "Displaying %s of %s Current Filters\n" "$(( rows > limit ? limit : rows ))" "${rows}"
 	sqlite3 -column "${db}" 2>/dev/null <<-EOF
 		.parameter set :user "'${user}'"
 		.parameter set :limit "'${limit}'"
