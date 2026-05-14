@@ -34,8 +34,10 @@ function setup_user_db() {
 	fi
 	sqlite3 "${db}" <"${srcdir}/src/setup.sql"
 	sqlite3 "${db}" <<-EOF
+		.parameter set :user "'${USER}'"
+		.parameter set :host "'${HOSTNAME}'"
 		INSERT OR IGNORE INTO users (user_name, host_name)
-		VALUES ("${USER}", "${HOSTNAME}");
+		VALUES (:user, :host);
 	EOF
 	printf "%s: setup user database at path '%s'.\n" "$(basename "${0}")" "${db}"
 }
@@ -53,9 +55,14 @@ function log_command() {
 		setup_user_db "${db}" || return "${?}"
 	fi
 	sqlite3 "${db}" <<-EOF
+		.parameter set :id "'${id}'"
+		.parameter set :user "'${USER}'"
+		.parameter set :host "'${HOSTNAME}'"
+		.parameter set :timestamp "'${timestamp}'"
+		.parameter set :command "'${command}'"
 		INSERT INTO command_log (id, user_name, host_name, datetime, command)
-		SELECT "${id}", "${USER}", "${HOSTNAME}", "${timestamp}", "${command}"
-		WHERE "${command}" NOT LIKE (SELECT ignore_commands FROM configuration) || '%';
+		SELECT :id, :user, :host, :timestamp, :command
+		WHERE :command NOT LIKE (SELECT ignore_commands FROM configuration) || '%';
 	EOF
 }
 
@@ -68,8 +75,9 @@ function add_filter() {
 		setup_user_db "${db}" || return "${?}"
 	fi
 	if ! sqlite3 "${db}" <<-EOF 2>/dev/null; then
+		.parameter set :filter "'${filter}'"
 		INSERT INTO configuration (ignore_commands)
-		VALUES ("${filter}");
+		VALUES (:filter);
 	EOF
 		printf "%s: failed to add filter '%s'.\n" "$(basename "${0}")" "${filter}" >&2
 		return 4
@@ -86,7 +94,8 @@ function remove_filter() {
 		setup_user_db "${db}" || return "${?}"
 	fi
 	rows=$(sqlite3 "${db}" <<-EOF 2>/dev/null
-		DELETE FROM configuration WHERE ignore_commands = "${filter}";
+		.parameter set :filter "'${filter}'"
+		DELETE FROM configuration WHERE ignore_commands = :filter;
 		SELECT changes();
 		EOF
 	)
