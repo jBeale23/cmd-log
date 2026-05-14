@@ -247,27 +247,27 @@ function main() {
 	local listing_logged_commands
 	local view_user
 	while [[ "${#}" -gt 0 ]]; do
-		if printf "%s\n" "${1}" | grep -qE -- "^(-h)|(--h(e(l(p)?)?)?)"; then
+		if [[ "${1}" =~ ^(-h)|(--h(e(l(p)?)?)?) ]]; then
 			usage
 			shift 1
 			return 0
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-V)|(--v(e(r(s(i(o(n)?)?)?)?)?)?)"; then
+		elif [[ "${1}" =~ ^(-V)|(--v(e(r(s(i(o(n)?)?)?)?)?)?) ]]; then
 			version
 			shift 1
 			return 0
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-l)|(--l(i(s(t(-(f(i(l(t(e(r(s)?)?)?)?)?)?)?)?)?)?)?)"; then
+		elif [[ "${1}" =~ ^(-l)|(--l(i(s(t(-(f(i(l(t(e(r(s)?)?)?)?)?)?)?)?)?)?)?)" ]]; then
 			listing_filters=true
 			shift 1
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-a)|(--a(d(d(-(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?)"; then
+		elif [[ "${1}" =~ ^(-a)|(--a(d(d(-(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?) ]]; then
 			adding_filter=true
 			shift 1
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-r)|(--r(e(m(o(v(e(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?)?)?)"; then
+		elif [[ "${1}" ^(-r)|(--r(e(m(o(v(e(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?)?)?) ]]; then
 			removing_filter=true
 			shift 1
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-v)|(--v(i(e(w)?)?)?)"; then
+		elif [[ "${1}" =~ ^(-v)|(--v(i(e(w)?)?)?) ]]; then
 			listing_logged_commands=true
 			shift 1
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-d)|(--d(a(t(a(b(a(s(e)?)?)?)?)?)?)?)"; then
+		elif [[ "${1}" =~ ^(-d)|(--d(a(t(a(b(a(s(e)?)?)?)?)?)?)?) ]]; then
 			case "${1}" in
 			*=*)
 				leader="${1%%=*}="
@@ -323,7 +323,7 @@ function main() {
 				fi
 			fi
 			shift 1
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-n)|(--l(i(m(i(t)?)?)?)?)"; then
+		elif [[ "${1}" =~ ^(-n)|(--l(i(m(i(t)?)?)?)?) ]]; then
 			case "${1}" in
 			*=*)
 				leader="${1%%=*}="
@@ -374,7 +374,7 @@ function main() {
 				return 2
 			fi
 			shift 1
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-u)|(--u(s(e(r)?)?)?)"; then
+		elif [[ "${1}" =~ ^(-u)|(--u(s(e(r)?)?)?) ]]; then
 			case "${1}" in
 			*=*)
 				leader="${1%%=*}="
@@ -421,7 +421,7 @@ function main() {
 		elif [[ "${1}" = "--" ]]; then
 			shift 1
 			break
-		elif printf "%s\n" "${1}" | grep -qE -- "^-.*"; then
+		elif [[ "${1}" =~ ^-.* ]]; then
 			cat <<-EOF >&2
 				$(basename "$0"): invalid option -- '${1}'
 				Try '$(basename "${0}") --help' for more information.
