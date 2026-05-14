@@ -4,7 +4,7 @@ usage() {
 	cat <<-EOF
 		Logs commands to a sqlite3 database for later study.
 
-		Usage: $(basename "${0}") [-h|V] | ([-d[=]<DATABASE>] ([-l|v [-n[=]<INTEGER>]]) | ([-a|r] <COMMAND>))
+		Usage: $(basename "${0}") [-h|V] | ([-d[=]<DATABASE>] ([-l|v [-n[=]<INTEGER>] [-u[=]<USER>]]) | ([-a|r] <COMMAND>))
 
 		Options:
 		  -h, --help                Show this help message and exit.
@@ -15,6 +15,7 @@ usage() {
 		  -l, --list-filters        List existing filters and exit.
 		  -n, --limit <INTEGER>     Set configuration to limit listed filters or log entries to <INTEGER>. Defaults to 10 on database initialization or if an invalid value is encountered.
 		  -v, --view                List the 'n' most recent log entries. 'n' is determined by the '--limit' flag if specified, or by per-user configuration value if unspecified.
+		  -u, --user <USER>         List filters or logged commands for specified <USER> instead of '\$USER'.
 	EOF
 }
 
@@ -136,7 +137,7 @@ function list_filters() {
 	local limit
 	local rows
 	db="${1}"
-	user=$(id -un)
+	user="${2}"
 	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
@@ -205,6 +206,7 @@ function view_log_entries() {
 	local limit
 	local rows
 	db="${1}"
+	user="${2}"
 	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
@@ -212,7 +214,7 @@ function view_log_entries() {
 	rows=$(
 		sqlite3 "${db}" <<-EOF 2>/dev/null
 			.parameter set :user "'${user}'"
-			SELECT COUNT(*) FROM command_log;
+			SELECT COUNT(*) FROM command_log WHERE user_name = :user;
 		EOF
 	)
 	printf "Displaying %s of %s Logged Commands\n" "$((rows > limit ? limit : rows))" "${rows}"
@@ -222,6 +224,7 @@ function view_log_entries() {
 		SELECT * FROM (
 			SELECT * 
 			FROM command_log
+			WHERE user_name = :user
 			ORDER BY id DESC
 			LIMIT :limit
 		)
@@ -242,6 +245,7 @@ function main() {
 	local removing_filter
 	local listing_filters
 	local listing_logged_commands
+	local view_user
 	while [[ "${#}" -gt 0 ]]; do
 		if printf "%s\n" "${1}" | grep -qE -- "^(-h)|(--h(e(l(p)?)?)?)"; then
 			usage
@@ -370,6 +374,50 @@ function main() {
 				return 2
 			fi
 			shift 1
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-u)|(--u(s(e(r)?)?)?)"; then
+			case "${1}" in
+			*=*)
+				leader="${1%%=*}="
+				view_user="${1#"${leader}"}"
+				;;
+			--user*)
+				view_user="${1#--user}"
+				;;
+			--use*)
+				limit="${1#--use}"
+				;;
+			--us*)
+				limit="${1#--us}"
+				;;
+			--u*)
+				limit="${1#--u}"
+				;;
+			-u*)
+				limit="${1#-u}"
+				;;
+			*)
+				printf "%s: invalid user format -- '%s\n'" "$(basename "${0}")" "${1}" >&2
+				return 2
+				;;
+			esac
+			if [[ -z "${view_user}" ]]; then
+				if [[ -n "${2}" ]]; then
+					case "${2}" in
+					-*)
+						printf "%s: If '--user' is specified, a user must be provided.\n" "$(basename "${0}")" >&2
+						return 2
+						;;
+					*)
+						limit="${2}"
+						shift 1
+						;;
+					esac
+				else
+					printf "%s: If '--user' is specified, a user must be provided.\n" "$(basename "${0}")" >&2
+					return 2
+				fi
+			fi
+			shift 1
 		elif [[ "${1}" = "--" ]]; then
 			shift 1
 			break
@@ -390,6 +438,7 @@ function main() {
 	removing_filter="${removing_filter:-false}"
 	listing_filters="${listing_filters:-false}"
 	listing_logged_commands="${listing_logged_commands:-false}"
+	view_user="${view_user:-$(id -un)}"
 	_old_limit=$(read_list_limit "${db}")
 	limit="${limit:-"${_old_limit}"}"
 	if (("${limit}" != "${_old_limit}")); then
@@ -399,10 +448,10 @@ function main() {
 		printf "%s: If '--list-filters' is specified '--view' can't be specified.\n" "$(basename "${0}")" >&2
 		return 2
 	elif "${listing_filters}"; then
-		list_filters "${db}"
+		list_filters "${db}" "${view_user}"
 		return 0
 	elif "${listing_logged_commands}"; then
-		view_log_entries "${db}"
+		view_log_entries "${db}" "${view_user}"
 		return 0
 	elif "${adding_filter}" && "${removing_filter}"; then
 		printf "%s: If '--add-filter' is specified '--remove-filter' can't be specified.\n" "$(basename "${0}")" >&2
