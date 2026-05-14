@@ -17,7 +17,7 @@ usage() {
 		  -l, --list-filters        List existing filters and exit.
 		  -n, --limit <INTEGER>     Set configuration to limit listed filters or log entries to <INTEGER>. Defaults to 10 on database initialization or if an invalid value is encountered.
 		  -v, --view                List the 'n' most recent log entries. 'n' is determined by the '--limit' flag if specified, or by per-user configuration value if unspecified.
-		  -u, --user <USER>         List filters or logged commands, or export logged commands for specified <USER> instead of '\$USER'.
+		  -u, --user <USER>         List or export logged commands for specified <USER> instead of '\$USER'.
 		      --                    Stop processing command line arguments.
 	EOF
 }
@@ -140,7 +140,7 @@ function list_filters() {
 	local limit
 	local rows
 	db="${1}"
-	user="${2}"
+	user="$(id -un)"
 	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
@@ -565,7 +565,7 @@ function main() {
 		printf "%s: If '--list-filters' is specified '--view' can't be specified.\n" "$(basename "${0}")" >&2
 		return 2
 	elif "${listing_filters}"; then
-		list_filters "${db}" "${view_user}"
+		list_filters "${db}"
 		return 0
 	elif "${listing_logged_commands}"; then
 		view_log_entries "${db}" "${view_user}"
