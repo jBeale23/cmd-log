@@ -62,7 +62,11 @@ function log_command() {
 		.parameter set :command "'${command}'"
 		INSERT INTO command_log (id, user_name, host_name, datetime, command)
 		SELECT :id, :user, :host, :timestamp, :command
-		WHERE :command NOT LIKE (SELECT ignore_commands FROM configuration) || '%';
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM configuration
+			WHERE :command LIKE ignore_commands || '%'
+		);
 	EOF
 }
 
