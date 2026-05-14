@@ -62,7 +62,7 @@ function log_command() {
 	if ! [[ -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
-	sqlite3 "${db}" <<-EOF
+	sqlite3 "${db}" 2>/dev/null <<-EOF
 		.parameter set :user "'${user}'"
 		.parameter set :host "'${host}'"
 		.parameter set :timestamp "'${timestamp}'"
@@ -70,25 +70,29 @@ function log_command() {
 		INSERT INTO command_log (id, user_name, host_name, datetime, command)
 		SELECT NULL, :user, :host, :timestamp, :command
 		WHERE NOT EXISTS (
-			SELECT 1
+			SELECT value
 			FROM configuration
-			WHERE :command LIKE ignore_commands || '%'
+			WHERE key = :user || '.ignore_command' AND
+			:command LIKE value || '%'
 		);
 	EOF
 }
 
 function add_filter() {
 	local db
+	local user
 	local filter
 	db="${1}"
+	user=$(id -un)
 	filter="${2}"
 	if ! [[ -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
 	if ! sqlite3 "${db}" <<-EOF 2>/dev/null; then
+		.parameter set :user "'${user}'"
 		.parameter set :filter "'${filter}'"
-		INSERT INTO configuration (ignore_commands)
-		VALUES (:filter);
+		INSERT INTO configuration (key, value)
+		VALUES (:user || '.ignore_command', :filter);
 	EOF
 		printf "%s: failed to add filter '%s'.\n" "$(basename "${0}")" "${filter}" >&2
 		return 4
@@ -98,15 +102,18 @@ function add_filter() {
 
 function remove_filter() {
 	local db
+	local user
 	local filter
 	db="${1}"
+	user=$(id -un)
 	filter="${2}"
 	if ! [[ -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
 	rows=$(sqlite3 "${db}" <<-EOF 2>/dev/null
+		.parameter set :user "'${user}'"
 		.parameter set :filter "'${filter}'"
-		DELETE FROM configuration WHERE ignore_commands = :filter;
+		DELETE FROM configuration WHERE key = :user || '.ignore_command' AND value = :filter;
 		SELECT changes();
 		EOF
 	)
@@ -119,12 +126,17 @@ function remove_filter() {
 
 function list_filters() {
 	local db
+	local user
 	db="${1}"
+	user=$(id -un)
 	if ! [[ -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
 	printf "Current Filters\n"
-	sqlite3 -column "${db}" "SELECT * FROM configuration;"
+	sqlite3 -column "${db}" 2>/dev/null <<-EOF
+		.parameter set :user "'${user}'"
+		SELECT value FROM configuration WHERE key = :user || '.ignore_command';
+	EOF
 }
 
 function main() {

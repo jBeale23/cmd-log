@@ -13,5 +13,7 @@ CREATE TABLE IF NOT EXISTS command_log (
 );
 
 CREATE TABLE IF NOT EXISTS configuration (
-	ignore_commands TEXT PRIMARY KEY
+	key TEXT NOT NULL,
+	value TEXT NOT NULL,
+	PRIMARY KEY(key, value)
 );
