@@ -17,3 +17,7 @@ CREATE TABLE IF NOT EXISTS configuration (
 	value TEXT NOT NULL,
 	PRIMARY KEY(key, value)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_number_entries
+ON configuration(key)
+WHERE key LIKE '%.number_entries_displayed';

@@ -4,7 +4,7 @@ usage() {
 	cat <<-EOF
 		Logs commands to a sqlite3 database for later study.
 
-		Usage: $(basename "${0}") [-h|v|l] | ([-d[=]DATABASE] [-a|r] <COMMAND>)
+		Usage: $(basename "${0}") [-h|v] | ([-d[=]<DATABASE>] ([-l [-n[=]<INTEGER>]]) | ([-a|r] <COMMAND>))
 
 		Options:
 		  -h, --help                Show this help message and exit.
@@ -13,6 +13,7 @@ usage() {
 		  -a, --add-filter          Add a filter that prevents logging commands that start with <COMMAND>. (Case sensitive)
 		  -r, --remove-filter       Remove an existing filter for <COMMAND>. (Case sensitive)
 		  -l, --list-filters        List existing filters and exit.
+		  -n, --limit <INTEGER>     Set configuration to limit listed filters or log entries to <INTEGER>. Defaults to 10 on database initialization or if an invalid value is encountered.
 	EOF
 }
 
@@ -31,7 +32,7 @@ function setup_user_db() {
 	local host
 	db="${1}"
   	srcdir=$(CDPATH="" cd -- "$(dirname -- "${0}")" && pwd -P)
-	if ! [[ -d ${srcdir} ]]; then
+	if [[ ! -d ${srcdir} ]]; then
 		printf "%s: failed to setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
 		return 5
 	fi
@@ -43,8 +44,11 @@ function setup_user_db() {
 		.parameter set :host "'${host}'"
 		INSERT OR IGNORE INTO users (user_name, host_name)
 		VALUES (:user, :host);
+
+		INSERT OR IGNORE INTO configuration (key, value)
+		VALUES (:user || '.number_entries_displayed', "10");
 	EOF
-	printf "%s: setup user database at path '%s'.\n" "$(basename "${0}")" "${db}"
+	printf "%s: setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
 }
 
 function log_command() {
@@ -53,13 +57,12 @@ function log_command() {
 	local host
 	local command
 	local timestamp
-	local id
 	db="${1}"
 	user=$(id -un)
 	host=$(hostname)
 	printf -v command -- "%s" "${2}"
 	printf -v timestamp "%(%Y-%m-%d %H:%M:%S)T" -1
-	if ! [[ -f "${db}" ]]; then
+	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
 	sqlite3 "${db}" 2>/dev/null <<-EOF
@@ -85,7 +88,7 @@ function add_filter() {
 	db="${1}"
 	user=$(id -un)
 	filter="${2}"
-	if ! [[ -f "${db}" ]]; then
+	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
 	if ! sqlite3 "${db}" <<-EOF 2>/dev/null; then
@@ -97,7 +100,7 @@ function add_filter() {
 		printf "%s: failed to add filter '%s'.\n" "$(basename "${0}")" "${filter}" >&2
 		return 4
 	fi
-	printf "%s: successfully added filter '%s'.\n" "$(basename "${0}")" "${filter}"
+	printf "%s: successfully added filter '%s'.\n" "$(basename "${0}")" "${filter}" >&2
 }
 
 function remove_filter() {
@@ -107,7 +110,7 @@ function remove_filter() {
 	db="${1}"
 	user=$(id -un)
 	filter="${2}"
-	if ! [[ -f "${db}" ]]; then
+	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
 	rows=$(sqlite3 "${db}" <<-EOF 2>/dev/null
@@ -121,22 +124,68 @@ function remove_filter() {
 		printf "%s: failed to remove filter '%s'.\n" "$(basename "${0}")" "${filter}" >&2
 		return 4
 	fi
-	printf "%s: successfully removed filter '%s'.\n" "$(basename "${0}")" "${filter}"
+	printf "%s: successfully removed filter '%s'.\n" "$(basename "${0}")" "${filter}" >&2
 }
 
 function list_filters() {
 	local db
 	local user
+	local limit
 	db="${1}"
 	user=$(id -un)
-	if ! [[ -f "${db}" ]]; then
+	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
+	limit=$(read_list_limit "${db}")
 	printf "Current Filters\n"
 	sqlite3 -column "${db}" 2>/dev/null <<-EOF
 		.parameter set :user "'${user}'"
-		SELECT value FROM configuration WHERE key = :user || '.ignore_command';
+		.parameter set :limit "'${limit}'"
+		SELECT value FROM configuration WHERE key = :user || '.ignore_command' LIMIT :limit;
 	EOF
+}
+
+function configure_list_limit() {
+	local db
+	local user
+	local limit
+	db="${1}"
+	user=$(id -un)
+	limit="${2}"
+	if [[ ! -f "${db}" ]]; then
+		setup_user_db "${db}" || return "${?}"
+	fi
+	sqlite3 "${db}" <<-EOF
+		.parameter set :user "'${user}'"
+		.parameter set :limit "'${limit}'"
+		INSERT INTO configuration (key, value)
+		VALUES (:user || '.number_entries_displayed', :limit)
+		ON CONFLICT(key) WHERE key LIKE '%.number_entries_displayed'
+		DO UPDATE SET value = excluded.value;
+	EOF
+}
+
+function read_list_limit() {
+	local db
+	local user
+	local limit
+	db="${1}"
+	user=$(id -un)
+	if [[ ! -f "${db}" ]]; then
+		setup_user_db "${db}" || return "${?}"
+	fi
+	limit=$(sqlite3 "${db}" <<-EOF
+		.parameter set :user "'${user}'"
+		SELECT value FROM configuration
+		WHERE key = :user || '.number_entries_displayed';
+		EOF
+	)
+	if [[ ! "${limit}" =~ ^[0-9]+$ ]]; then
+		limit=10
+		configure_list_limit "${db}" "${limit}"
+		printf "%s: invalid display limit was found. It was reset to the default value of 10 for user: %s\n" "$(basename "${0}")" "${user}" >&2
+	fi
+	printf "%s" "${limit}"
 }
 
 function main() {
@@ -146,6 +195,8 @@ function main() {
 	fi
 	local db
 	local command
+	local limit
+	local _old_limit
 	local adding_filter
 	local removing_filter
 	local listing_filters
@@ -167,7 +218,7 @@ function main() {
 		elif printf "%s\n" "${1}" | grep -qE -- "^(-r)|(--r(e(m(o(v(e(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?)?)?)"; then
 			removing_filter=true
 			shift 1
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-d)|--d(a(t(a(b(a(s(e)?)?)?)?)?)?)"; then
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-d)|(--d(a(t(a(b(a(s(e)?)?)?)?)?)?)?)"; then
 			case "${1}" in
 			*=*)
 				leader="${1%%=*}="
@@ -223,7 +274,56 @@ function main() {
 				fi
 			fi
 			shift 1
-			db="${1}"
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-n)|(--l(i(m(i(t)?)?)?)?)"; then
+			case "${1}" in
+			*=*)
+				leader="${1%%=*}="
+				limit="${1#"${leader}"}"
+				;;
+			--limit*)
+				limit="${1#--limit}"
+				;;
+			--limi*)
+				limit="${1#--limi}"
+				;;
+			--lim*)
+				limit="${1#--lim}"
+				;;
+			--li*)
+				limit="${1#--li}"
+				;;
+			--l*)
+				limit="${1#--l}"
+				;;
+			-n*)
+				limit="${1#-n}"
+				;;
+			*)
+				printf "%s: invalid limit format -- '%s\n'" "$(basename "${0}")" "${1}" >&2
+				return 2
+				;;
+			esac
+			if [[ -z "${limit}" ]]; then
+				if [[ -n "${2}" ]]; then
+					case "${2}" in
+					-*)
+						printf "%s: If '--limit' is specified, a limit must be provided.\n" "$(basename "${0}")" >&2
+						return 2
+						;;
+					*)
+						limit="${2}"
+						shift 1
+						;;
+					esac
+				else
+					printf "%s: If '--limit' is specified, a limit must be provided.\n" "$(basename "${0}")" >&2
+					return 2
+				fi
+			fi
+			if [[ ! "${limit}" =~ ^[0-9]+$ ]]; then
+				printf "%s: invalid limit format -- '%s\n'" "$(basename "${0}")" "${limit}" >&2
+				return 2
+			fi
 			shift 1
 		elif [[ "${1}" = "--" ]]; then
 			shift 1
@@ -244,6 +344,11 @@ function main() {
 	adding_filter="${adding_filter:-false}"
 	removing_filter="${removing_filter:-false}"
 	listing_filters="${listing_filters:-false}"
+	_old_limit=$(read_list_limit "${db}")
+	limit="${limit:-"${_old_limit}"}"
+	if (( "${limit}" != "${_old_limit}" )); then
+		configure_list_limit "${db}" "${limit}"
+	fi
 	if "${listing_filters}"; then
 		list_filters "${db}"
 		return 0	
