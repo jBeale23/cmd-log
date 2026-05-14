@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
-if ! sqlite3 --version 1>/dev/null 2>&1; then
+if ! sqlite3 --version &>/dev/null; then
+	exit 1
+fi
+if ! uuidgen --version &>/dev/null; then
 	exit 1
 fi
 
