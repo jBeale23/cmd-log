@@ -16,6 +16,7 @@ usage() {
 		  -n, --limit <INTEGER>     Set configuration to limit listed filters or log entries to <INTEGER>. Defaults to 10 on database initialization or if an invalid value is encountered.
 		  -v, --view                List the 'n' most recent log entries. 'n' is determined by the '--limit' flag if specified, or by per-user configuration value if unspecified.
 		  -u, --user <USER>         List filters or logged commands for specified <USER> instead of '\$USER'.
+		      --                    Stop processing command line arguments.
 	EOF
 }
 
