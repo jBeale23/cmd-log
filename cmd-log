@@ -23,11 +23,11 @@ version() {
 
 function setup_user_db() {
 	local db
-	db="${1:-"${HOME}/.cmd-log.db"}"
-	sqlite3 "${db}" < "./src/setup.sql"
+	db="${1}"
+	sqlite3 "${db}" <"./src/setup.sql"
 	sqlite3 "${db}" <<-EOF
-	INSERT OR IGNORE INTO users (user_name, host_name)
-	VALUES ("${USER}", "${HOSTNAME}");
+		INSERT OR IGNORE INTO users (user_name, host_name)
+		VALUES ("${USER}", "${HOSTNAME}");
 	EOF
 }
 
@@ -36,15 +36,15 @@ function log_command() {
 	local command
 	local timestamp
 	local id
-	db="${1-"${HOME}/.cmd-log.db"}"
+	db="${1}"
 	printf -v command -- "%s" "${2}"
 	printf -v timestamp "%(%Y-%m-%d %H:%M:%S)T" -1
 	id=$(uuidgen)
 	[[ -f "${db}" ]] || setup_user_db "${db}"
 	sqlite3 "${db}" <<-EOF
-	INSERT INTO command_log (id, user_name, host_name, datetime, command)
-	SELECT "${id}", "${USER}", "${HOSTNAME}", "${timestamp}", "${command}"
-	WHERE "${command}" NOT LIKE (SELECT ignore_commands FROM configuration) || '%';
+		INSERT INTO command_log (id, user_name, host_name, datetime, command)
+		SELECT "${id}", "${USER}", "${HOSTNAME}", "${timestamp}", "${command}"
+		WHERE "${command}" NOT LIKE (SELECT ignore_commands FROM configuration) || '%';
 	EOF
 }
 
@@ -68,6 +68,64 @@ function main() {
 			version
 			shift 1
 			return 0
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-d)|--d(a(t(a(b(a(s(e)?)?)?)?)?)?)"; then
+			case "${1}" in
+			*=*)
+				leader="${1%%=*}="
+				db="${1#"${leader}"}"
+				;;
+			--database*)
+				db="${1#--database}"
+				;;
+			--databas*)
+				db="${1#--databas}"
+				;;
+			--databa*)
+				db="${1#--databa}"
+				;;
+			--datab*)
+				db="${1#--datab}"
+				;;
+			--data*)
+				db="${1#--data}"
+				;;
+			--dat*)
+				db="${1#--dat}"
+				;;
+			--da*)
+				db="${1#--da}"
+				;;
+			--d*)
+				db="${1#--d}"
+				;;
+			-d*)
+				db="${1#-d}"
+				;;
+			*)
+				printf "%s: invalid database format -- '%s\n'" "$(basename "${0}")" "${1}" >&2
+				return 2
+				;;
+			esac
+			if [[ -z "${db}" ]]; then
+				if [[ -n "${2}" ]]; then
+					case "${2}" in
+					-*)
+						printf "%s: If '--database' is specified, a database path must be provided\n" "$(basename "${0}")" >&2
+						return 2
+						;;
+					*)
+						db="${2}"
+						shift 1
+						;;
+					esac
+				else
+					printf "%s: If '--database' is specified, a database path must be provided\n" "$(basename "${0}")" >&2
+					return 2
+				fi
+			fi
+			shift 1
+			db="${1}"
+			shift 1
 		elif [[ "${1}" = "--" ]]; then
 			shift 1
 			break
