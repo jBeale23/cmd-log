@@ -43,8 +43,8 @@ function setup_user_db() {
 	fi
 	user=$(id -un)
 	host=$(hostname)
-	sqlite3 "${db}" <"${srcdir}/src/setup.sql"
-	sqlite3 "${db}" <<-EOF
+	sqlite3 "${db}" <"${srcdir}/src/setup.sql" &>/dev/null
+	sqlite3 "${db}" <<-EOF &>/dev/null
 		.parameter set :user "'${user}'"
 		.parameter set :host "'${host}'"
 		INSERT OR IGNORE INTO users (user_name, host_name)
@@ -70,7 +70,7 @@ function log_command() {
 	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
-	sqlite3 "${db}" 2>/dev/null <<-EOF
+	sqlite3 "${db}" <<-EOF &>/dev/null
 		.parameter set :user "'${user}'"
 		.parameter set :host "'${host}'"
 		.parameter set :timestamp "'${timestamp}'"
@@ -96,7 +96,7 @@ function add_filter() {
 	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
-	if ! sqlite3 "${db}" <<-EOF 2>/dev/null; then
+	if ! sqlite3 "${db}" <<-EOF &>/dev/null; then
 		.parameter set :user "'${user}'"
 		.parameter set :filter "'${filter}'"
 		INSERT INTO configuration (key, value)
@@ -169,7 +169,7 @@ function configure_list_limit() {
 	if [[ ! -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
-	sqlite3 "${db}" <<-EOF
+	sqlite3 "${db}" <<-EOF &>/dev/null
 		.parameter set :user "'${user}'"
 		.parameter set :limit "'${limit}'"
 		INSERT INTO configuration (key, value)
@@ -254,7 +254,7 @@ function export_to_csv() {
 			printf "%s: exporting command log for all users requires root priveleges.\n" "$(basename "${0}")" >&2
 			return 7
 		fi
-		sqlite3 "${db}" <<-EOF >"${export_path}"
+		sqlite3 "${db}" <<-EOF >"${export_path}" 2>/dev/null
 			.header on
 			.mode csv
 			SELECT * FROM command_log;
@@ -540,10 +540,12 @@ function main() {
 		if [[ ! -f "${db}" ]]; then
 			setup_user_db "${db}" || return "${?}"
 		fi
-		cat <<-"EOF" >&2
-		Please add the following to your .bashrc to begin logging commands:
-		'trap /path/to/your/cmd-log/install/cmd-log --database /path/to/your/database -- "${BASH_COMMAND}"' DEBUG
-		Afterwards, add any desired filters with `cmd-log --add-filter <COMMAND>`
+		local srcdir
+		srcdir=$(CDPATH="" cd -- "$(dirname -- "${0}")" && pwd -P)
+		cat <<-EOF >&2
+			Please add the following to the end of your .bashrc to begin logging commands:
+			'trap ${srcdir}/$(basename "${0}") --database /path/to/your/database -- "\${BASH_COMMAND}"' DEBUG
+			Afterwards, add any desired filters with $(basename "${0}") --add-filter <COMMAND>
 		EOF
 		return 0
 	fi
