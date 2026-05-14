@@ -4,12 +4,15 @@ usage() {
 	cat <<-EOF
 		Logs commands to a sqlite3 database for later study.
 
-		Usage: $(basename "${0}") [-d[=]DATABASE] [-a|r[=]IGNORE] [-h]|[-v] <COMMAND>
+		Usage: $(basename "${0}") [-h|v|l] | ([-d[=]DATABASE] [-a|r] <COMMAND>)
 
 		Options:
-		  -h, --help                   Show this help message and exit.
-		  -v, --version                Show version information and exit.
-		  -d, --database [DATABASE]    Use the database located at DATABASE, creating it if necessary. Defaults to '\$HOME/.cmd-log.db' if unspecified.
+		  -h, --help                Show this help message and exit.
+		  -v, --version             Show version information and exit.
+		  -d, --database <DATABASE> Use the database located at DATABASE, creating it if necessary. Defaults to '\$HOME/.cmd-log.db' if unspecified.
+		  -a, --add-filter          Add a filter that prevents logging commands that start with <COMMAND>. (Case sensitive)
+		  -r, --remove-filter       Remove an existing filter for <COMMAND>. (Case sensitive)
+		  -l, --list-filters        List existing filters and exit.
 	EOF
 }
 
@@ -48,6 +51,48 @@ function log_command() {
 	EOF
 }
 
+function add_filter() {
+	local db
+	local filter
+	db="${1}"
+	filter="${2}"
+	[[ -f "${db}" ]] || setup_user_db "${db}"
+	if ! sqlite3 "${db}" <<-EOF 2>/dev/null; then
+		INSERT INTO configuration (ignore_commands)
+		VALUES ("${filter}");
+	EOF
+		printf "%s: failed to add filter '%s'.\n" "$(basename "${0}")" "${filter}" >&2
+		return 4
+	fi
+	printf "%s: successfully added filter '%s'.\n" "$(basename "${0}")" "${filter}"
+}
+
+function remove_filter() {
+	local db
+	local filter
+	db="${1}"
+	filter="${2}"
+	[[ -f "${db}" ]] || setup_user_db "${db}"
+	rows=$(sqlite3 "${db}" <<-EOF 2>/dev/null
+		DELETE FROM configuration WHERE ignore_commands = "${filter}";
+		SELECT changes();
+		EOF
+	)
+	if (( rows != 1 )); then
+		printf "%s: failed to remove filter '%s'.\n" "$(basename "${0}")" "${filter}" >&2
+		return 4
+	fi
+	printf "%s: successfully removed filter '%s'.\n" "$(basename "${0}")" "${filter}"
+}
+
+function list_filters() {
+	local db
+	db="${1}"
+	[[ -f "${db}" ]] || setup_user_db "${db}"
+	printf "Current Filters\n"
+	sqlite3 -column "${db}" "SELECT * FROM configuration;"
+}
+
 function main() {
 	if ! sqlite3 --version &>/dev/null; then
 		printf "%s: sqlite3 is required. Please install it and try again.\n" "$(basename "${0}")" >&2
@@ -59,15 +104,27 @@ function main() {
 	fi
 	local db
 	local command
+	local adding_filter
+	local removing_filter
+	local listing_filters
 	while [[ "${#}" -gt 0 ]]; do
 		if printf "%s\n" "${1}" | grep -qE -- "^(-h)|(--h(e(l(p)?)?)?)"; then
 			usage
 			shift 1
 			return 0
-		elif printf "%s\n" "${1}" | grep -qE -- "^(-v)|(--v(e(r(s(i(o(n)?)?)?)?)?))"; then
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-v)|(--v(e(r(s(i(o(n)?)?)?)?)?)?)"; then
 			version
 			shift 1
 			return 0
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-l)|(--l(i(s(t(-(f(i(l(t(e(r(s)?)?)?)?)?)?)?)?)?)?)?)"; then
+			listing_filters=true
+			shift 1
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-a)|(--a(d(d(-(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?)"; then
+			adding_filter=true
+			shift 1
+		elif printf "%s\n" "${1}" | grep -qE -- "^(-r)|(--r(e(m(o(v(e(f(i(l(t(e(r)?)?)?)?)?)?)?)?)?)?)?)"; then
+			removing_filter=true
+			shift 1
 		elif printf "%s\n" "${1}" | grep -qE -- "^(-d)|--d(a(t(a(b(a(s(e)?)?)?)?)?)?)"; then
 			case "${1}" in
 			*=*)
@@ -110,7 +167,7 @@ function main() {
 				if [[ -n "${2}" ]]; then
 					case "${2}" in
 					-*)
-						printf "%s: If '--database' is specified, a database path must be provided\n" "$(basename "${0}")" >&2
+						printf "%s: If '--database' is specified, a database path must be provided.\n" "$(basename "${0}")" >&2
 						return 2
 						;;
 					*)
@@ -119,7 +176,7 @@ function main() {
 						;;
 					esac
 				else
-					printf "%s: If '--database' is specified, a database path must be provided\n" "$(basename "${0}")" >&2
+					printf "%s: If '--database' is specified, a database path must be provided.\n" "$(basename "${0}")" >&2
 					return 2
 				fi
 			fi
@@ -142,11 +199,28 @@ function main() {
 		fi
 	done
 	db="${db:-"${HOME}/.cmd-log.db"}"
-	if [[ -z "${command}" ]]; then
-		usage
-		return 1
+	adding_filter="${adding_filter:-false}"
+	removing_filter="${removing_filter:-false}"
+	listing_filters="${listing_filters:-false}"
+	if "${listing_filters}"; then
+		list_filters "${db}"
+		return 0	
+	elif "${adding_filter}" && "${removing_filter}"; then
+		printf "%s: If '--add-filter' is specified '--remove-filter' can't be specified.\n" "$(basename "${0}")" >&2
+		return 2
+	else
+		if [[ -z "${command}" ]]; then
+			usage
+			return 1
+		fi
 	fi
-	log_command "${db}" "${command}" || return "${?}"
+	if "${adding_filter}"; then
+		add_filter "${db}" "${command}" || return "${?}"
+	elif "${removing_filter}"; then
+		remove_filter "${db}" "${command}" || return "${?}"
+	else
+		log_command "${db}" "${command}" || return "${?}"
+	fi
 }
 
 main "${@}" || exit "${?}"
