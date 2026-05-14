@@ -249,7 +249,7 @@ function export_to_csv() {
 		return 6
 	fi
 	if [[ -z "${user}" ]]; then
-		if (( "$(id -u)" != 0 )); then
+		if (("$(id -u)" != 0)); then
 			printf "%s: exporting command log for all users requires root priveleges.\n" "$(basename "${0}")" >&2
 			return 7
 		fi
@@ -262,7 +262,7 @@ function export_to_csv() {
 		printf "%s: exported logged commands for all users to path '%s'.\n" "$(basename "${0}")" "${export_path}" >&2
 		return 0
 	fi
-	if [[ "${user}" != "$(id -un)" ]] && (( "$(id -u)" != 0 )); then
+	if [[ "${user}" != "$(id -un)" ]] && (("$(id -u)" != 0)); then
 		printf "%s: exporting command log for other users requires root priveleges.\n" "$(basename "${0}")" >&2
 		return 7
 	fi
