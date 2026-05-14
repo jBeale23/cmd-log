@@ -214,6 +214,10 @@ function view_log_entries() {
 		setup_user_db "${db}" || return "${?}"
 	fi
 	limit=$(read_list_limit "${db}")
+	if [[ "${user}" != "$(id -un)" ]] && (("$(id -u)" != 0)); then
+		printf "%s: viewing command log for other users requires root priveleges.\n" "$(basename "${0}")" >&2
+		return 7
+	fi
 	rows=$(
 		sqlite3 "${db}" <<-EOF 2>/dev/null
 			.parameter set :user "'${user}'"
