@@ -26,16 +26,21 @@ version() {
 
 function setup_user_db() {
 	local db
+	local srcdir
+	local user
+	local host
 	db="${1}"
   	srcdir=$(CDPATH="" cd -- "$(dirname -- "${0}")" && pwd -P)
 	if ! [[ -d ${srcdir} ]]; then
 		printf "%s: failed to setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
 		return 5
 	fi
+	user=$(id -un)
+	host=$(hostname)
 	sqlite3 "${db}" <"${srcdir}/src/setup.sql"
 	sqlite3 "${db}" <<-EOF
-		.parameter set :user "'${USER}'"
-		.parameter set :host "'${HOSTNAME}'"
+		.parameter set :user "'${user}'"
+		.parameter set :host "'${host}'"
 		INSERT OR IGNORE INTO users (user_name, host_name)
 		VALUES (:user, :host);
 	EOF
@@ -44,18 +49,22 @@ function setup_user_db() {
 
 function log_command() {
 	local db
+	local user
+	local host
 	local command
 	local timestamp
 	local id
 	db="${1}"
+	user=$(id -un)
+	host=$(hostname)
 	printf -v command -- "%s" "${2}"
 	printf -v timestamp "%(%Y-%m-%d %H:%M:%S)T" -1
 	if ! [[ -f "${db}" ]]; then
 		setup_user_db "${db}" || return "${?}"
 	fi
 	sqlite3 "${db}" <<-EOF
-		.parameter set :user "'${USER}'"
-		.parameter set :host "'${HOSTNAME}'"
+		.parameter set :user "'${user}'"
+		.parameter set :host "'${host}'"
 		.parameter set :timestamp "'${timestamp}'"
 		.parameter set :command "'${command}'"
 		INSERT INTO command_log (id, user_name, host_name, datetime, command)
