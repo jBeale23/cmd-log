@@ -59,7 +59,7 @@ function log_command() {
 		.parameter set :timestamp "'${timestamp}'"
 		.parameter set :command "'${command}'"
 		INSERT INTO command_log (id, user_name, host_name, datetime, command)
-		SELECT "NULL", :user, :host, :timestamp, :command
+		SELECT NULL, :user, :host, :timestamp, :command
 		WHERE NOT EXISTS (
 			SELECT 1
 			FROM configuration
