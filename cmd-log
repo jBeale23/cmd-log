@@ -36,14 +36,33 @@ function setup_user_db() {
 	local user
 	local host
 	db="${1}"
-	srcdir=$(CDPATH="" cd -- "$(dirname -- "${0}")" && pwd -P)
-	if [[ ! -d ${srcdir} ]]; then
-		printf "%s: failed to setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
-		return 5
-	fi
 	user=$(id -un)
 	host=$(hostname)
-	sqlite3 "${db}" <"${srcdir}/src/setup.sql" &>/dev/null
+	sqlite3 "${db}" <<-EOF &>/dev/null
+		CREATE TABLE IF NOT EXISTS users (
+			user_name TEXT NOT NULL,
+			host_name TEXT NOT NULL,
+			PRIMARY KEY (user_name, host_name)
+		);
+
+		CREATE TABLE IF NOT EXISTS command_log (
+			id INTEGER PRIMARY KEY,
+			user_name TEXT NOT NULL,
+			host_name TEXT NOT NULL,
+			datetime TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			command TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS configuration (
+			key TEXT NOT NULL,
+			value TEXT NOT NULL,
+			PRIMARY KEY(key, value)
+		);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS unique_number_entries
+		ON configuration(key)
+		WHERE key LIKE '%.number_entries_displayed';
+	EOF
 	if ! chmod 600 "${db}"; then
 		printf "%s: failed to setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
 		return 5
