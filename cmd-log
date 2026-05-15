@@ -44,6 +44,10 @@ function setup_user_db() {
 	user=$(id -un)
 	host=$(hostname)
 	sqlite3 "${db}" <"${srcdir}/src/setup.sql" &>/dev/null
+	if ! chmod 600 "${db}"; then
+		printf "%s: failed to setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
+		return 5
+	fi
 	sqlite3 "${db}" <<-EOF &>/dev/null
 		.parameter set :user "'${user}'"
 		.parameter set :host "'${host}'"
