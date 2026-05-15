@@ -38,7 +38,9 @@ function setup_user_db() {
 	db="${1}"
 	user=$(id -un)
 	host=$(hostname)
-	sqlite3 "${db}" <<-EOF &>/dev/null
+	if ! sqlite3 "${db}" <<-EOF &>/dev/null; then
+		.parameter set :user "'${user}'"
+		.parameter set :host "'${host}'"
 		CREATE TABLE IF NOT EXISTS users (
 			user_name TEXT NOT NULL,
 			host_name TEXT NOT NULL,
@@ -62,20 +64,20 @@ function setup_user_db() {
 		CREATE UNIQUE INDEX IF NOT EXISTS unique_number_entries
 		ON configuration(key)
 		WHERE key LIKE '%.number_entries_displayed';
-	EOF
-	if ! chmod 600 "${db}"; then
-		printf "%s: failed to setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
-		return 5
-	fi
-	sqlite3 "${db}" <<-EOF &>/dev/null
-		.parameter set :user "'${user}'"
-		.parameter set :host "'${host}'"
+
 		INSERT OR IGNORE INTO users (user_name, host_name)
 		VALUES (:user, :host);
 
 		INSERT OR IGNORE INTO configuration (key, value)
 		VALUES (:user || '.number_entries_displayed', "10");
 	EOF
+		printf "%s: failed to setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
+		return 5
+	fi
+	if ! chmod 600 "${db}"; then
+		printf "%s: failed to set permissions for user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
+		return 5
+	fi
 	printf "%s: setup user database at path '%s'.\n" "$(basename "${0}")" "${db}" >&2
 }
 
