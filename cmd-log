@@ -40,12 +40,6 @@ function setup_user_db() {
 	host=$(hostname)
 	if ! sqlite3 "${db}" <<-EOF &>/dev/null; then
 		.parameter set :user "'${user}'"
-		.parameter set :host "'${host}'"
-		CREATE TABLE IF NOT EXISTS users (
-			user_name TEXT NOT NULL,
-			host_name TEXT NOT NULL,
-			PRIMARY KEY (user_name, host_name)
-		);
 
 		CREATE TABLE IF NOT EXISTS command_log (
 			id INTEGER PRIMARY KEY,
@@ -64,9 +58,6 @@ function setup_user_db() {
 		CREATE UNIQUE INDEX IF NOT EXISTS unique_number_entries
 		ON configuration(key)
 		WHERE key LIKE '%.number_entries_displayed';
-
-		INSERT OR IGNORE INTO users (user_name, host_name)
-		VALUES (:user, :host);
 
 		INSERT OR IGNORE INTO configuration (key, value)
 		VALUES (:user || '.number_entries_displayed', "10");
